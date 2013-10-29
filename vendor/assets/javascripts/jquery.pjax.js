@@ -562,7 +562,7 @@ function extractContainer(data, xhr, options) {
 
   // Prefer X-PJAX-URL header if it was set, otherwise fallback to
   // using the original requested url.
-  obj.url = stripPjaxParam(xhr.getResponseHeader('X-PJAX-URL') || options.requestUrl)
+  obj.url = stripPjaxParam(xhr.getResponseHeader('X-PJAX-CLEAR-URL') || options.requestUrl)
 
   // Attempt to parse response html into elements
   if (/<html/i.test(data)) {
