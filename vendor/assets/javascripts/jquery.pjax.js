@@ -271,8 +271,12 @@ function pjax(options) {
       pjax.state.url = url.href
       window.history.replaceState(pjax.state, container.title, url.href)
 
-      var target = $(url.hash)
-      if (target.length) $(window).scrollTop(target.offset().top)
+      try {
+        var target = $(url.hash)
+        if (target.length) $(window).scrollTop(target.offset().top)
+      } catch (err) {
+        console.log(err);
+      }
     }
 
     fire('pjax:success', [data, status, xhr, options])
