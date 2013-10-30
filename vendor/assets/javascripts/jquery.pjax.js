@@ -177,6 +177,8 @@ function pjax(options) {
     return !event.isDefaultPrevented()
   }
 
+  pjax.fire = fire
+
   var timeoutTimer
 
   options.beforeSend = function(xhr, settings) {
@@ -225,6 +227,8 @@ function pjax(options) {
     }
   }
 
+  var cacheEntry = {};
+
   options.success = function(data, status, xhr) {
     var container = extractContainer(data, xhr, options)
 
@@ -233,10 +237,13 @@ function pjax(options) {
       return
     }
 
+
     pjax.state = {
       id: options.id || uniqueId(),
       url: container.url,
       title: container.title,
+      controller: container.controller,
+      action: container.action,
       container: context.selector,
       fragment: options.fragment,
       timeout: options.timeout
@@ -247,6 +254,9 @@ function pjax(options) {
     }
 
     if (container.title) document.title = container.title
+
+    fire('pjax:beforechange', [data, status, xhr, options])
+    cacheEntry.contents = context.clone().contents()
     context.html(container.contents)
 
     // Scroll to top by default
@@ -271,12 +281,8 @@ function pjax(options) {
       pjax.state.url = url.href
       window.history.replaceState(pjax.state, container.title, url.href)
 
-      try {
-        var target = $(url.hash)
-        if (target.length) $(window).scrollTop(target.offset().top)
-      } catch (err) {
-        console.log(err);
-      }
+      var target = $(url.hash)
+      if (target.length) $(window).scrollTop(target.offset().top)
     }
 
     fire('pjax:success', [data, status, xhr, options])
@@ -294,7 +300,9 @@ function pjax(options) {
       title: document.title,
       container: context.selector,
       fragment: options.fragment,
-      timeout: options.timeout
+      timeout: options.timeout,
+      controller: $("body").data("controller"),
+      action: $("body").data("action"),
     }
     window.history.replaceState(pjax.state, document.title)
   }
@@ -312,9 +320,13 @@ function pjax(options) {
   if (xhr.readyState > 0) {
     if (options.push && !options.replace) {
       // Cache current container element before replacing it
-      cachePush(pjax.state.id, context.clone().contents())
+      cacheEntry.contents = context.clone().contents()
+      cacheEntry.state = pjax.state
+      cachePush(pjax.state.id, cacheEntry)
 
-      window.history.pushState(null, "", stripPjaxParam(options.requestUrl))
+      if (options.url != window.location.href) {
+        window.history.pushState(null, "", stripPjaxParam(options.requestUrl))
+      }
     }
 
     fire('pjax:start', [xhr, options])
@@ -358,8 +370,10 @@ function onPjaxPopstate(event) {
 
   if (state && state.container) {
     var container = $(state.container)
-    if (container.length) {
-      var contents = cacheMapping[state.id]
+    if (container.length && cacheMapping[state.id]) {
+      var contents = cacheMapping[state.id].contents
+
+      var cacheEntry = { contents: container.clone().contents(), state: pjax.state }
 
       if (pjax.state) {
         // Since state ids always increase, we can deduce the history
@@ -368,7 +382,7 @@ function onPjaxPopstate(event) {
 
         // Cache current container before replacement and inform the
         // cache which direction the history shifted.
-        cachePop(direction, pjax.state.id, container.clone().contents())
+        cachePop(direction, pjax.state.id, cacheEntry)
       }
 
       var popstateEvent = $.Event('pjax:popstate', {
@@ -380,6 +394,8 @@ function onPjaxPopstate(event) {
       var options = {
         id: state.id,
         url: state.url,
+        controller: state.controller,
+        action: state.action,
         container: container,
         push: false,
         fragment: state.fragment,
@@ -387,13 +403,21 @@ function onPjaxPopstate(event) {
         scrollTo: false
       }
 
+
       if (contents) {
         container.trigger('pjax:start', [null, options])
+
+        container.trigger('pjax:prepopstateend', [options])
+
+        cacheEntry.contents = container.clone().contents()
 
         if (state.title) document.title = state.title
         container.html(contents)
         pjax.state = state
 
+        console.log('pop state end')
+
+        container.trigger('pjax:popstateend', [options])
         container.trigger('pjax:end', [null, options])
       } else {
         pjax(options)
@@ -568,7 +592,9 @@ function extractContainer(data, xhr, options) {
 
   // Prefer X-PJAX-URL header if it was set, otherwise fallback to
   // using the original requested url.
-  obj.url = stripPjaxParam(xhr.getResponseHeader('X-PJAX-URL') || options.requestUrl)
+  obj.url = stripPjaxParam(xhr.getResponseHeader('X-PJAX-CLEAR-URL') || options.requestUrl)
+  obj.controller = xhr.getResponseHeader('X-PJAX-CONTROLLER')
+  obj.action = xhr.getResponseHeader('X-PJAX-ACTION')
 
   // Attempt to parse response html into elements
   if (/<html/i.test(data)) {
@@ -642,12 +668,18 @@ function cachePush(id, value) {
 
   // Remove all entires in forward history stack after pushing
   // a new page.
-  while (cacheForwardStack.length)
-    delete cacheMapping[cacheForwardStack.shift()]
+  while (cacheForwardStack.length) {
+    index = cacheForwardStack.shift()
+    pjax.fire('pjax:popcache', cacheMapping[index])
+    delete cacheMapping[index]
+  }
 
   // Trim back history stack to max cache length.
-  while (cacheBackStack.length > pjax.defaults.maxCacheLength)
-    delete cacheMapping[cacheBackStack.shift()]
+  while (cacheBackStack.length > pjax.defaults.maxCacheLength) {
+    index = cacheBackStack.shift()
+    pjax.fire('pjax:popcache', cacheMapping[index])
+    delete cacheMapping[index]
+  }
 }
 
 // Shifts cache from directional history cache. Should be
