@@ -400,7 +400,8 @@ function onPjaxPopstate(event) {
         push: false,
         fragment: state.fragment,
         timeout: state.timeout,
-        scrollTo: false
+        scrollTo: false,
+        title: state.title
       }
 
 
@@ -414,8 +415,6 @@ function onPjaxPopstate(event) {
         if (state.title) document.title = state.title
         container.html(contents)
         pjax.state = state
-
-        console.log('pop state end')
 
         container.trigger('pjax:popstateend', [options])
         container.trigger('pjax:end', [null, options])
